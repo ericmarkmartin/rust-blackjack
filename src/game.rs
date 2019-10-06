@@ -1,4 +1,5 @@
 use dialoguer::Select;
+use std::fmt;
 
 use crate::{
     agent::{Action, Agent, Dealer, Player},
@@ -11,6 +12,30 @@ pub struct Game {
     deck: Deck,
     dealer: Dealer,
     player: Player,
+}
+
+enum HandResult {
+    Bust,
+    Safe(usize),
+    Blackjack,
+}
+
+enum RoundResult {
+    PlayerWins,
+    DealerWins,
+    Push,
+}
+
+impl fmt::Display for RoundResult {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use RoundResult::*;
+        let s = match self {
+            PlayerWins => "Player wins",
+            DealerWins => "Dealer wins",
+            Push => "Push",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 impl Game {
@@ -56,13 +81,27 @@ impl Game {
 
     pub fn round(&mut self) -> std::io::Result<()> {
         self.deal();
-        if self.player_play()? && (!self.dealer_play()? || self.dealer.val() < self.player.val()) {
-            TERM.write_line("Player wins")?;
-        } else if self.dealer.val() == self.player.val() {
-            TERM.write_line("Push")?;
-        } else {
-            TERM.write_line("Dealer wins")?;
-        }
+        let round_result = match self.player_play()? {
+            HandResult::Bust => RoundResult::DealerWins,
+            HandResult::Safe(player_val) => match self.dealer_play()? {
+                HandResult::Bust => RoundResult::PlayerWins,
+                HandResult::Safe(dealer_val) => {
+                    if player_val < dealer_val {
+                        RoundResult::DealerWins
+                    } else if player_val > dealer_val {
+                        RoundResult::PlayerWins
+                    } else {
+                        RoundResult::Push
+                    }
+                }
+                HandResult::Blackjack => RoundResult::DealerWins,
+            },
+            HandResult::Blackjack => match self.dealer_play()? {
+                HandResult::Blackjack => RoundResult::Push,
+                HandResult::Safe(_) | HandResult::Bust => RoundResult::PlayerWins,
+            },
+        };
+        TERM.write_line(format!("{}", round_result).as_str())?;
         self.discard();
         Ok(())
     }
@@ -80,7 +119,7 @@ impl Game {
         agent: &mut T,
         deck: &mut Deck,
         top_card: Option<&Card>,
-    ) -> std::io::Result<bool> {
+    ) -> std::io::Result<HandResult> {
         while agent.val() < 21 {
             match agent.action(top_card)? {
                 Action::Stay => {
@@ -101,9 +140,9 @@ impl Game {
 
         if agent.val() > 21 {
             TERM.write_line(format!("{}: busted with {}", agent.name(), agent.val()).as_str())?;
-            Ok(false)
+            Ok(HandResult::Bust)
         } else {
-            Ok(true)
+            Ok(HandResult::Safe(agent.val()))
         }
     }
 
@@ -111,22 +150,22 @@ impl Game {
         agent: &mut T,
         deck: &mut Deck,
         top_card: Option<&Card>,
-    ) -> std::io::Result<bool> {
+    ) -> std::io::Result<HandResult> {
         if agent.val() == 21 {
             TERM.write_line("Blackjack")?;
             agent.print_hand()?;
-            Ok(true)
+            Ok(HandResult::Blackjack)
         } else {
             Game::accumulate_cards(agent, deck, top_card)
         }
     }
 
-    fn player_play(&mut self) -> std::io::Result<bool> {
+    fn player_play(&mut self) -> std::io::Result<HandResult> {
         let top_card = self.dealer.hand().cards().last().unwrap();
         Game::agent_play(&mut self.player, &mut self.deck, Some(top_card))
     }
 
-    fn dealer_play(&mut self) -> std::io::Result<bool> {
+    fn dealer_play(&mut self) -> std::io::Result<HandResult> {
         Game::agent_play(&mut self.dealer, &mut self.deck, None)
     }
 }
