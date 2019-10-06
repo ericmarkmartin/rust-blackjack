@@ -37,6 +37,7 @@ impl Strategy for Player {
             .item("Stay")
             .item("Hit")
             .interact_on(&TERM)?;
+        TERM.write_line("")?;
 
         if index == 0 {
             Ok(Action::Stay)
