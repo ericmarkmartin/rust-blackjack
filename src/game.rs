@@ -168,7 +168,7 @@ impl Game {
     fn dealer_play(&mut self) -> std::io::Result<HandResult> {
         TERM.write_line("Dealer cards:")?;
         self.player.print_hand()?;
-        TERM.write_line(format!("value: {}", self.player.val()).as_str())?;
+        TERM.write_line(format!("Value: {}", self.player.val()).as_str())?;
         Game::agent_play(&mut self.dealer, &mut self.deck, None)
     }
 }
